@@ -14,7 +14,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID", "")  # Render'dagi Environment Variables'dan olinadi
+ADMIN_ID = os.getenv("ADMIN_ID", "") 
+CHANNEL_USERNAME = "@uchunuqta_1"  # Majburiy kanal username
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -36,6 +37,23 @@ class FeedbackState(StatesGroup):
 
 class BroadcastState(StatesGroup):
     waiting_for_message = State()
+
+# --- KANALGA A'ZOLIKNI TEKSHIRISH FUNKSIYASI ---
+async def check_channel_sub(user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        if member.status in ["creator", "administrator", "member"]:
+            return True
+        return False
+    except Exception:
+        return True # Xatolik bo'lsa jarayon to'xtab qolmasligi uchun
+
+def get_sub_keyboard():
+    buttons = [
+        [InlineKeyboardButton(text="📢 Kanalga obuna bo'lish", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")],
+        [InlineKeyboardButton(text="✅ A'zo bo'ldim (Tekshirish)", callback_data="check_subscription")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # --- TUGMALAR ---
 
@@ -94,7 +112,7 @@ async def start_handler(message: types.Message, state: FSMContext):
         reply_markup=get_main_keyboard(message.from_user.id)
     )
 
-# --- OVOZ BERISH KETMA-KETLIGI ---
+# --- OVOZ BERISH VA KANAL TEKSHIRUV ---
 
 @dp.message(F.text == "🗳 Ovoz berish")
 async def start_voting(message: types.Message, state: FSMContext):
@@ -108,8 +126,30 @@ async def start_voting(message: types.Message, state: FSMContext):
         await message.answer(f"⚠️ Siz allaqachon **{cand}** uchun ovoz bergansiz!", parse_mode="Markdown")
         return
 
+    # Kanalga obunani tekshirish
+    is_subscribed = await check_channel_sub(user_id)
+    if not is_subscribed:
+        await message.answer(
+            f"⚠️ Ovoz berishdan oldin **{CHANNEL_USERNAME}** kanalimizga obuna bo'lishingiz kerak!",
+            reply_markup=get_sub_keyboard()
+        )
+        return
+
     await state.set_state(VoteState.waiting_for_fullname)
     await message.answer("Iltimos, **Ism va Familiyangizni** kiriting:\n*(Masalan: Javohir Toshpo'latov)*", parse_mode="Markdown")
+
+@dp.callback_query(F.data == "check_subscription")
+async def check_sub_callback(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    is_subscribed = await check_channel_sub(user_id)
+    
+    if is_subscribed:
+        await callback.answer("✅ Obuna tasdiqlandi!", show_alert=True)
+        await callback.message.delete()
+        await state.set_state(VoteState.waiting_for_fullname)
+        await callback.message.answer("Iltimos, **Ism va Familiyangizni** kiriting:\n*(Masalan: Javohir Toshpo'latov)*", parse_mode="Markdown")
+    else:
+        await callback.answer("❌ Siz hali kanalga obuna bo'lmadingiz!", show_alert=True)
 
 @dp.message(VoteState.waiting_for_fullname)
 async def process_fullname(message: types.Message, state: FSMContext):
@@ -168,7 +208,7 @@ async def ask_feedback(callback: CallbackQuery, state: FSMContext):
 @dp.message(FeedbackState.waiting_for_message)
 async def forward_feedback_to_admin(message: types.Message, state: FSMContext):
     if ADMIN_ID:
-        sender_info = f"📩 **Yangi xabar!**\n👤 Kimdan: {message.from_user.full_name} (@{message.from_user.username or 'yoq'})\nID: `{message.from_user.id}`\n\n Matn:\n{message.text}"
+        sender_info = f"📩 **Yangi xabar!**\n👤 Kimdan: {message.from_user.full_name} (@{message.from_user.username or 'yoq'})\nID: `{message.from_user.id}`\n\nMatn:\n{message.text}"
         try:
             await bot.send_message(chat_id=ADMIN_ID, text=sender_info, parse_mode="Markdown")
             await message.answer("✅ Xabaringiz adminga muvaffaqiyatli yuborildi!")
@@ -188,9 +228,9 @@ async def show_results_msg(message: types.Message):
 async def show_rules(message: types.Message):
     rules = (
         "ℹ️ **So'rovnoma qoidalari:**\n\n"
-        "1. Har bir foydalanuvchi faqat 1 marta ovoz bera oladi.\n"
-        "2. Ovoz berishdan oldin Ism-familiya va tug'ilgan yil kiritilishi shart.\n"
-        "3. Natijalar real vaqt rejimida yangilanib boradi."
+        f"1. Ovoz berishdan oldin {CHANNEL_USERNAME} kanaliga obuna bo'lish shart.\n"
+        "2. Har bir foydalanuvchi faqat 1 marta ovoz bera oladi.\n"
+        "3. Ism-familiya va tug'ilgan yil to'g'ri kiritilishi kerak."
     )
     await message.answer(rules, parse_mode="Markdown")
 
