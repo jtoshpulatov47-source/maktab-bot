@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+from aiohttp import web
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -19,6 +21,7 @@ votes = {
     "Radjabova Dinora": 0,
     "Istamova Sitora": 0,
     "Fazliddinova Nazokat": 0,
+    "Toshpo'latov Javohir": 0,
     "Shodiyev Azizbek": 0,
     "Rasulov Hamro": 0,
     "Olimova Ruxshona": 0,
@@ -115,10 +118,17 @@ async def process_vote(callback: types.CallbackQuery):
         await callback.message.edit_reply_markup(reply_markup=get_main_keyboard())
         await callback.answer(f"Ovozingiz {candidate} uchun qabul qilindi!", show_alert=True)
 
-async def main():
-    logging.basicConfig(level=logging.INFO)
-    print("Bot ishga tushdi...")
-    await dp.start_polling(bot)
+async def handle(request):
+    return web.Response(text="Bot is running")
+
+async def on_startup(app):
+    import asyncio
+    asyncio.create_task(dp.start_polling(bot))
+
+app = web.Application()
+app.router.add_get('/', handle)
+app.on_startup.append(on_startup)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    port = int(os.environ.get("PORT", 8080))
+    web.run_app(app, host="0.0.0.0", port=port)
