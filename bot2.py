@@ -22,7 +22,22 @@ dp = Dispatcher(storage=MemoryStorage())
 
 # Ma'lumotlar ombori
 votes_db = {}  # {user_id: {"name": str, "birth_year": str, "candidate": str, "username": str}}
-candidates = ["Nomzod 1", "Nomzod 2", "Nomzod 3"]
+
+# Rasmga moslangan haqiqiy nomzodlar ro'yxati
+candidates = [
+    "Boltayeva Gulruh",
+    "Radjabova Dinora",
+    "Istamova Sitora",
+    "Fazliddinova Nazokat",
+    "Toshpo'latov Javohir",
+    "Shodiyev Azizbek",
+    "Rasulov Hamro",
+    "Olimova Ruxshona",
+    "Saidov Jamol",
+    "Zohirova Nigina",
+    "Shodiyeva Orzigul"
+]
+
 poll_active = True
 all_users = set()
 
@@ -38,7 +53,7 @@ class FeedbackState(StatesGroup):
 class BroadcastState(StatesGroup):
     waiting_for_message = State()
 
-# --- KANALGA A'ZOLIKNI TEKSHIRISH FUNKSIYASI ---
+# --- KANALGA A'ZOLIKNI TEKSHIRISH ---
 async def check_channel_sub(user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
@@ -46,7 +61,7 @@ async def check_channel_sub(user_id: int) -> bool:
             return True
         return False
     except Exception:
-        return True # Xatolik bo'lsa jarayon to'xtab qolmasligi uchun
+        return True
 
 def get_sub_keyboard():
     buttons = [
@@ -55,7 +70,7 @@ def get_sub_keyboard():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# --- TUGMALAR ---
+# --- KLAVIATURA TUGMALARI ---
 
 def get_main_keyboard(user_id: int):
     keyboard = [
@@ -69,8 +84,17 @@ def get_main_keyboard(user_id: int):
 
 def get_poll_inline_keyboard():
     buttons = []
+    # Ovozlar sonini nomzod yonida ko'rsatish
+    counts = {c: 0 for c in candidates}
+    for item in votes_db.values():
+        cand = item.get("candidate")
+        if cand in counts:
+            counts[cand] += 1
+
     for cand in candidates:
-        buttons.append([InlineKeyboardButton(text=f"🗳 {cand}", callback_data=f"vote_{cand}")])
+        cnt = counts[cand]
+        buttons.append([InlineKeyboardButton(text=f"🗳 {cand} ({cnt} ovoz)", callback_data=f"vote_{cand}")])
+    
     buttons.append([InlineKeyboardButton(text="📊 Natijalarni ko'rish", callback_data="show_results")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -85,7 +109,7 @@ def get_admin_inline_keyboard():
 
 def get_results_text():
     total_votes = len(votes_db)
-    text = "📊 **Joriy ovoz berish natijalari:**\n\n"
+    text = "Sizningcha, eng mahoratli va talabchan o'qituvchi kim?\n\n📊 **Joriy ovoz berish natijalari:**\n\n"
     counts = {c: 0 for c in candidates}
     for item in votes_db.values():
         cand = item.get("candidate")
@@ -107,26 +131,23 @@ async def start_handler(message: types.Message, state: FSMContext):
     await state.clear()
     all_users.add(message.from_user.id)
     await message.answer(
-        "Assalomu alaykum! So'rovnoma botiga xush kelibsiz.\n"
-        "Quyidagi menyudan kerakli bo'limni tanlang:",
+        "Sizningcha, eng mahoratli va talabchan o'qituvchi kim?\n\n"
+        "Ovoz berish uchun quyidagi menyudan **🗳 Ovoz berish** tugmasini bosing:",
         reply_markup=get_main_keyboard(message.from_user.id)
     )
-
-# --- OVOZ BERISH VA KANAL TEKSHIRUV ---
 
 @dp.message(F.text == "🗳 Ovoz berish")
 async def start_voting(message: types.Message, state: FSMContext):
     if not poll_active:
-        await message.answer("⚠️ Hozirda ovoz berish jarayoni to'xtatilgan.")
+        await message.answer("⚠️ Hozirda ovoz berish jarayoni to'xtatilgan.", reply_markup=get_main_keyboard(message.from_user.id))
         return
         
     user_id = message.from_user.id
     if user_id in votes_db:
         cand = votes_db[user_id]["candidate"]
-        await message.answer(f"⚠️ Siz allaqachon **{cand}** uchun ovoz bergansiz!", parse_mode="Markdown")
+        await message.answer(f"⚠️ Siz allaqachon **{cand}** uchun ovoz bergansiz!", parse_mode="Markdown", reply_markup=get_main_keyboard(message.from_user.id))
         return
 
-    # Kanalga obunani tekshirish
     is_subscribed = await check_channel_sub(user_id)
     if not is_subscribed:
         await message.answer(
@@ -182,7 +203,7 @@ async def handle_vote_finish(callback: CallbackQuery, state: FSMContext):
     
     await state.clear()
     await callback.answer("✅ Ovozingiz qabul qilindi!", show_alert=False)
-    await callback.message.answer(f"✅ Ovozingiz qabul qilindi!\n\n{get_results_text()}", parse_mode="Markdown")
+    await callback.message.answer(f"✅ Ovozingiz qabul qilindi!\n\n{get_results_text()}", parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
 
 # --- BOG'LANISH BOʻLIMI ---
 
@@ -211,18 +232,18 @@ async def forward_feedback_to_admin(message: types.Message, state: FSMContext):
         sender_info = f"📩 **Yangi xabar!**\n👤 Kimdan: {message.from_user.full_name} (@{message.from_user.username or 'yoq'})\nID: `{message.from_user.id}`\n\nMatn:\n{message.text}"
         try:
             await bot.send_message(chat_id=ADMIN_ID, text=sender_info, parse_mode="Markdown")
-            await message.answer("✅ Xabaringiz adminga muvaffaqiyatli yuborildi!")
+            await message.answer("✅ Xabaringiz adminga muvaffaqiyatli yuborildi!", reply_markup=get_main_keyboard(message.from_user.id))
         except Exception:
-            await message.answer("✅ Xabaringiz qabul qilindi.")
+            await message.answer("✅ Xabaringiz qabul qilindi.", reply_markup=get_main_keyboard(message.from_user.id))
     else:
-        await message.answer("✅ Xabaringiz qabul qilindi.")
+        await message.answer("✅ Xabaringiz qabul qilindi.", reply_markup=get_main_keyboard(message.from_user.id))
     await state.clear()
 
 # --- UMUMIY TUGMALAR ---
 
 @dp.message(F.text == "📊 Natijalarni ko'rish")
 async def show_results_msg(message: types.Message):
-    await message.answer(get_results_text(), parse_mode="Markdown")
+    await message.answer(get_results_text(), parse_mode="Markdown", reply_markup=get_main_keyboard(message.from_user.id))
 
 @dp.message(F.text == "ℹ️ Qoidalar")
 async def show_rules(message: types.Message):
@@ -232,7 +253,7 @@ async def show_rules(message: types.Message):
         "2. Har bir foydalanuvchi faqat 1 marta ovoz bera oladi.\n"
         "3. Ism-familiya va tug'ilgan yil to'g'ri kiritilishi kerak."
     )
-    await message.answer(rules, parse_mode="Markdown")
+    await message.answer(rules, parse_mode="Markdown", reply_markup=get_main_keyboard(message.from_user.id))
 
 @dp.message(F.text == "👤 Mening ovozim")
 async def show_my_vote(message: types.Message):
@@ -240,9 +261,9 @@ async def show_my_vote(message: types.Message):
     if user_id in votes_db:
         cand = votes_db[user_id]["candidate"]
         info = votes_db[user_id]
-        await message.answer(f"✅ Siz **{cand}** uchun ovoz bergansiz.\n👤 Kiritilgan ism: {info['name']}\n📅 Tug'ilgan yil: {info['birth_year']}", parse_mode="Markdown")
+        await message.answer(f"✅ Siz **{cand}** uchun ovoz bergansiz.\n👤 Kiritilgan ism: {info['name']}\n📅 Tug'ilgan yil: {info['birth_year']}", parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
     else:
-        await message.answer("❌ Siz hali ovoz bermagansiz.")
+        await message.answer("❌ Siz hali ovoz bermagansiz.", reply_markup=get_main_keyboard(user_id))
 
 # --- ADMIN PANEL ---
 
@@ -308,7 +329,7 @@ async def process_broadcast(message: types.Message, state: FSMContext):
             count += 1
         except Exception:
             pass
-    await message.answer(f"✅ Xabar {count} ta foydalanuvchiga muvaffaqiyatli yuborildi.")
+    await message.answer(f"✅ Xabar {count} ta foydalanuvchiga muvaffaqiyatli yuborildi.", reply_markup=get_main_keyboard(message.from_user.id))
     await state.clear()
 
 @dp.callback_query(F.data == "show_results")
